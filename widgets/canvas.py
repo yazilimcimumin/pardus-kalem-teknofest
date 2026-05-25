@@ -13,8 +13,8 @@ class CanvasOverlay(QGraphicsView):
         super().__init__(parent)
         self.engine = engine
 
-        # Pencere Özellikleri
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow)
+        # Pencere Özellikleri (Tool pencere tipi Wayland/X11 altında stays-on-top ve şeffaflık için en kararlısıdır)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet("background: transparent; border: none;")
 
@@ -77,32 +77,40 @@ class CanvasOverlay(QGraphicsView):
         self.hud_label.move(self.width() - self.hud_label.width() - 20, 20)
 
     # Ekran Dondurma (Screenshot) Fonksiyonu
-    def freeze_screen(self, toolbar):
-        """Mevcut ekranın yüksek çözünürlüklü ekran görüntüsünü alır ve arka plana yükler"""
+    def freeze_screen(self, toolbar, callback=None):
+        """Mevcut ekranın yüksek çözünürlüklü ekran görüntüsünü alır, arka plana yükler ve canvas'ı gösterir"""
         # Ekran görüntüsünde araç çubuğunun çıkmaması için geçici olarak gizle
         toolbar.hide()
         
-        # Ekranın arayüz olaylarını işlemesi için çok kısa bir süre bekle (Qt Event Loop)
-        from PyQt6.QtWidgets import QApplication
-        QApplication.processEvents()
-
-        # Ekran görüntüsünü yakala
-        screen = QApplication.primaryScreen()
-        if screen:
-            screenshot = screen.grabWindow(0)
-            self.background_item.setPixmap(screenshot)
-            self.background_item.show()
-        else:
-            self.background_item.hide()
-
-        # Araç çubuğunu geri göster
-        toolbar.show()
+        # Kompozitörün (Wayland/X11) pencereyi gizlemeyi tamamlaması için kısa bir gecikme ver (120ms)
+        def _do_grab():
+            from PyQt6.QtWidgets import QApplication
+            screen = QApplication.primaryScreen()
+            if screen:
+                screenshot = screen.grabWindow(0)
+                self.background_item.setPixmap(screenshot)
+                self.background_item.show()
+            else:
+                self.background_item.hide()
+            
+            # Canvas'ı ve araç çubuğunu göster/öne çıkar
+            self.show()
+            self.raise_()
+            
+            toolbar.show()
+            toolbar.raise_()
+            
+            if callback:
+                callback()
+                
+        QTimer.singleShot(120, _do_grab)
 
     def unfreeze_screen(self):
         """Arka plan görüntüsünü temizler ve şeffaf moda döner"""
         self.background_item.setPixmap(QPixmap())
         self.background_item.hide()
         self.reset_view()
+        self.hide()
 
     # Görünüm Kontrolü
     def reset_view(self):
@@ -294,7 +302,9 @@ class CanvasOverlay(QGraphicsView):
     # Vektörel Silgi Mantığı (Collision Detection)
     def erase_at(self, scene_pos: QPointF):
         """Silgi koordinatına temas eden tüm vektör çizimleri sahneden kaldırır"""
-        eraser_size = 20 # Hassas silgi çapı
+        # Çizim boyutunun 4 katı büyüklüğünde dinamik silgi boyutu (kullanımı aşırı kolaylaştırır)
+        global_size = self.engine.get_pen_width()
+        eraser_size = max(20, global_size * 4)
         
         # Silgi etki alanını temsil eden kareyi oluştur
         erase_rect = QRectF(
@@ -366,3 +376,20 @@ class CanvasOverlay(QGraphicsView):
         if cleared_items:
             # Temizleme aksiyonunu geri alınabilir olarak ekle
             self.engine.push_action(DrawingActionType.CLEAR, cleared_items)
+
+    def paintEvent(self, event):
+        # Önce varsayılan sahne çizimini yap
+        super().paintEvent(event)
+        
+        # Çizim modundayken ve canvas açıkken ekranın etrafını mavi bir çerçeveyle kapla (etkin mod bildirimi)
+        if self.engine.get_active_tool() != ToolMode.MOUSE and self.isVisible():
+            painter = QPainter(self.viewport())
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Glowing mavi çerçeve kalemi
+            pen = QPen(QColor(0, 102, 255, 220), 4) # 4px kalınlığında parlak mavi
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            
+            # Kenarlıklardan 2px içeride olacak şekilde tam ekran çerçevesini çiz
+            painter.drawRect(2, 2, self.width() - 4, self.height() - 4)

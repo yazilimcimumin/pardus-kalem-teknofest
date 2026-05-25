@@ -1,7 +1,7 @@
 import sys
 import os
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 # Proje yollarını ekle (içe aktarmalar için)
@@ -31,7 +31,7 @@ class PardusKalemApp:
         # 3. Yüzer Modern Araç Çubuğu
         self.toolbar = FloatingToolbar(self.engine)
         
-        # Araç çubuğunu başlangıçta ekranın sağ-orta tarafına yerleştir
+        # Araç çubuğunu başlangıçta ekranın sağ-orta tarafına yerleştir (Kabarcık şeklinde)
         geom = self.canvas.geometry()
         tb_x = geom.width() - 80
         tb_y = int((geom.height() - self.toolbar.height()) / 2)
@@ -43,10 +43,10 @@ class PardusKalemApp:
         # Sinyal ve Olay Bağlantıları
         self.setup_connections()
 
-        # Varsayılan mod olan "Çizim Modu" ile başlat
-        self.canvas.freeze_screen(self.toolbar)
-        self.canvas.show()
-        self.canvas.raise_()
+        # Varsayılan olarak Fare Modunda (İşaretçi ve Kabarcık araç çubuğu) başlat
+        # Bu aşamada canvas gizlidir ve ekran dondurulmamıştır
+        self.canvas.hide()
+        self.toolbar.set_collapsed_state(True)
         self.toolbar.raise_()
 
     def setup_connections(self):
@@ -72,17 +72,15 @@ class PardusKalemApp:
         if mode == ToolMode.MOUSE:
             # İşaretçi modunda dondurulan ekran çözülür ve katman gizlenir
             self.canvas.unfreeze_screen()
-            self.canvas.hide()
         else:
             # Herhangi bir çizim moduna geçildiğinde:
             if self.canvas.isHidden():
                 # Eğer katman gizliyse, yeni bir ekran dondurma işlemi yap ve katmanı aç
                 self.canvas.freeze_screen(self.toolbar)
-                self.canvas.show()
-            
-            # Pencereleri öne çıkar (Araç çubuğu çizim katmanının üstünde durmalıdır)
-            self.canvas.raise_()
-            self.toolbar.raise_()
+            else:
+                # Zaten açıksa pencereleri öne çıkar
+                self.canvas.raise_()
+                self.toolbar.raise_()
 
     def trigger_undo(self):
         """Çizim motorundan son işlemi geri alır"""
