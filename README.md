@@ -47,27 +47,29 @@ Bu modül ekranın üzerine tam saydam (transparent) bir katman olarak giydirili
 
 ---
 
-## 🚀 Çalıştırma Talimatları
+## 🚀 Kurulum ve Entegrasyon Talimatları
 
-Uygulamayı Pardus veya herhangi bir Linux dağıtımında çalıştırmak son derece kolaydır. Sisteminizde python3 kurulu olmalıdır.
+Uygulamayı Pardus, ETAP akıllı tahtalar veya herhangi bir Linux dağıtımında kurup entegre etmek son derece kolaydır.
 
-### 1. Kurulum ve Bağımlılıklar
-Aşağıdaki adımlarla sanal ortamı kurun ve PyQt6 yüklemesini gerçekleştirin (Uygulama dizinindeyken):
+### 1. Tek Tıkla Masaüstü Kurulumu
+Aşağıdaki komutları çalıştırarak kurulum betiğini başlatın. Bu betik gerekli tüm bağımlılıkları yükleyecek, masaüstünüze ve uygulama menünüze **Pardus Akıllı Kalem** kısayolunu entegre edecektir.
+
 ```bash
-# Sanal ortam oluşturun
-python3 -m venv venv
+# Kurulum betiğine çalışma izni verin
+chmod +x install.sh
 
-# Sanal ortamı aktifleştirip PyQt6 kurun
-./venv/bin/pip install --upgrade pip
-./venv/bin/pip install PyQt6
+# Mevcut kullanıcı için kurun (Sudo/Parola GEREKTİRMEZ!)
+./install.sh
+
+# VEYA sistem genelinde tüm kullanıcılar için kurun (Sudo gerektirir)
+sudo ./install.sh
 ```
 
 ### 2. Uygulamayı Başlatma
-Başlatıcı scriptimize çalışma izni verin ve çalıştırın:
-```bash
-chmod +x run.sh
-./run.sh
-```
+Kurulum tamamlandıktan sonra uygulamayı:
+* Masaüstünüzde oluşan **Pardus Akıllı Kalem** simgesine çift tıklayarak,
+* Pardus Uygulama Menüsü (Başlat) -> **Eğitim** veya **Grafik** kategorilerinden,
+* Veya terminalden doğrudan `./run.sh` yazarak başlatabilirsiniz!
 
 ---
 
