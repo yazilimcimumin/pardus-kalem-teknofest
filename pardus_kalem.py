@@ -57,7 +57,7 @@ class PardusKalemApp:
         self.toolbar.undo_requested.connect(self.trigger_undo)
         self.toolbar.redo_requested.connect(self.trigger_redo)
         self.toolbar.clear_requested.connect(self.canvas.clear_canvas)
-        self.toolbar.close_requested.connect(QApplication.quit)
+        self.toolbar.close_requested.connect(self.close_application)
 
         # KLAVYE KISAYOLLARI (Ctrl+Z ve Ctrl+Y)
         # Çizim katmanı açıkken öğretmen klavyeden de geri/ileri alabilmeli
@@ -89,6 +89,12 @@ class PardusKalemApp:
     def trigger_redo(self):
         """Geri alınan işlemi ileri alır"""
         self.engine.redo(self.canvas.scene)
+
+    def close_application(self):
+        """Uygulama pencerelerini kapatır ve çıkış yapar"""
+        self.canvas.close()
+        self.toolbar.close()
+        QApplication.quit()
 
 def main():
     # Wayland altında şeffaflık ve pencere konumlandırma sorunlarını gidermek için Qt öznitelik ayarı

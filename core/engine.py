@@ -16,12 +16,13 @@ class DrawingActionType(enum.Enum):
     ADD = "add"
     REMOVE = "remove"
     CLEAR = "clear"
+    ERASE_MODIFY = "erase_modify"
 
 class DrawingAction:
     """Çizim işlemlerini geri alıp ileri alabilmek için tutan komut nesnesi"""
-    def __init__(self, action_type: DrawingActionType, items: list):
+    def __init__(self, action_type: DrawingActionType, items):
         self.action_type = action_type
-        self.items = items # Etkilenen QGraphicsItem listesi
+        self.items = items # Etkilenen QGraphicsItem listesi veya sözlük (ERASE_MODIFY için)
 
 class DrawingEngine:
     """Çizim özelliklerini (renk, kalınlık vb.) ve Geri Al / İleri Al yığınını yöneten çekirdek"""
@@ -89,7 +90,7 @@ class DrawingEngine:
         return QBrush(Qt.BrushStyle.NoBrush)
 
     # Undo / Redo Çekirdek Mantığı
-    def push_action(self, action_type: DrawingActionType, items: list):
+    def push_action(self, action_type: DrawingActionType, items):
         """Yeni bir çizim aksiyonunu geri al yığınına ekler ve ileri al yığınını temizler"""
         if not items:
             return
@@ -117,6 +118,12 @@ class DrawingEngine:
             # Temizlenen tüm vektörleri sahneye geri ekle
             for item in action.items:
                 scene.addItem(item)
+        elif action.action_type == DrawingActionType.ERASE_MODIFY:
+            # Kısmi silme geri alma: eklenen yeni parçaları kaldır, silinen eski parçaları ekle
+            for item in action.items.get("added", []):
+                scene.removeItem(item)
+            for item in action.items.get("removed", []):
+                scene.addItem(item)
 
         return True
 
@@ -139,6 +146,12 @@ class DrawingEngine:
         elif action.action_type == DrawingActionType.CLEAR:
             # Geri getirilen tüm vektörleri sahneden tekrar çıkar
             for item in action.items:
+                scene.removeItem(item)
+        elif action.action_type == DrawingActionType.ERASE_MODIFY:
+            # Kısmi silme ileri alma: eklenen yeni parçaları ekle, silinen eski parçaları çıkar
+            for item in action.items.get("added", []):
+                scene.addItem(item)
+            for item in action.items.get("removed", []):
                 scene.removeItem(item)
 
         return True

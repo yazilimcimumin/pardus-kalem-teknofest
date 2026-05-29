@@ -1,10 +1,12 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QGraphicsDropShadowEffect, QFrame, QLabel, QSlider, QApplication, QColorDialog
+    QGraphicsDropShadowEffect, QFrame, QLabel, QSlider, QApplication, QColorDialog,
+    QBoxLayout
 )
-from PyQt6.QtCore import Qt, QPoint, QSize, pyqtSignal, QRectF, QPointF
+from PyQt6.QtCore import Qt, QPoint, QSize, pyqtSignal, QRectF, QPointF, QVariantAnimation, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QBrush, QFont, QMouseEvent
 from core.engine import ToolMode, DrawingEngine
+import math
 
 class VectorIconType:
     MOUSE = "mouse"
@@ -18,6 +20,7 @@ class VectorIconType:
     REDO = "redo"
     CLEAR = "clear"
     CLOSE = "close"
+    SCROLL = "scroll"
     
     # Şekiller (Shapes)
     LINE = "line"
@@ -34,6 +37,7 @@ class VectorIconButton(QPushButton):
         self.setFixedSize(38, 38) # Standardized compact button size
         self.is_hovered = False
         self.active_state = False
+        self.icon_color_override = None
 
         self.setStyleSheet("""
             QToolTip {
@@ -63,42 +67,36 @@ class VectorIconButton(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Hover veya Aktif durum arka plan rengi
         bg_color = QColor(255, 255, 255, 0)
         border_color = QColor(255, 255, 255, 0)
 
         if self.active_state:
             bg_color = QColor(0, 255, 204, 45) # Neon turkuaz yarı saydam
-              # Çizim modundayken ve canvas açıkken ekranın etrafını mavi bir çerçeveyle kapla (etkin mod bildirimi)
             border_color = QColor(0, 255, 204, 180)
         elif self.is_hovered:
             bg_color = QColor(255, 255, 255, 25) # Hafif beyaz parıltı
             border_color = QColor(255, 255, 255, 60)
 
-        # Buton gövdesi
         painter.setPen(QPen(border_color, 1))
         painter.setBrush(QBrush(bg_color))
         painter.drawRoundedRect(1, 1, self.width() - 2, self.height() - 2, 8, 8)
 
-        # İkon Renkleri
-        icon_color = QColor(255, 255, 255) # Varsayılan beyaz
+        icon_color = QColor(255, 255, 255)
         if self.active_state or self.is_hovered:
-            icon_color = QColor(0, 255, 204) # Turkuaz
+            icon_color = QColor(0, 255, 204)
 
         if self.icon_type == VectorIconType.CLOSE:
-            icon_color = QColor(255, 80, 80) # Kapat butonu kırmızı
+            icon_color = QColor(255, 80, 80)
 
-        # Çizim Ayarları
         pen = QPen(icon_color, 2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
 
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
 
-        # VEKTÖREL İKON ÇİZİMLERİ (QPainterPath)
         if self.icon_type == VectorIconType.MOUSE:
             path = QPainterPath()
             path.moveTo(cx - 5, cy - 7)
@@ -163,15 +161,15 @@ class VectorIconButton(QPushButton):
             painter.drawPath(path)
 
         elif self.icon_type == VectorIconType.SIZE:
-            # Slider icon
             painter.drawLine(int(cx - 8), int(cy), int(cx + 8), int(cy))
             painter.drawEllipse(int(cx - 3), int(cy - 4), 6, 6)
 
         elif self.icon_type == VectorIconType.PALETTE:
-            # Palette icon
             painter.drawEllipse(int(cx - 8), int(cy - 8), 16, 16)
-            # thumb hole
-            painter.drawEllipse(int(cx + 1), int(cy + 1), 3, 3)
+            c_color = self.icon_color_override if hasattr(self, 'icon_color_override') and self.icon_color_override else QColor(0, 255, 204)
+            painter.setBrush(QBrush(c_color))
+            painter.drawEllipse(int(cx - 4), int(cy - 4), 8, 8)
+            painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
 
         elif self.icon_type == VectorIconType.UNDO:
             path = QPainterPath()
@@ -205,8 +203,33 @@ class VectorIconButton(QPushButton):
         elif self.icon_type == VectorIconType.CLOSE:
             painter.drawLine(int(cx - 6), int(cy - 6), int(cx + 6), int(cy + 6))
             painter.drawLine(int(cx + 6), int(cy - 6), int(cx - 6), int(cy + 6))
+
+        elif self.icon_type == VectorIconType.SCROLL:
+            path = QPainterPath()
+            path.moveTo(cx - 3, cy - 8)
+            path.lineTo(cx + 3, cy - 8)
+            path.arcTo(QRectF(cx - 3, cy - 11, 6, 6), 0, 180)
+            path.lineTo(cx - 3, cy + 8)
+            path.arcTo(QRectF(cx - 3, cy + 5, 6, 6), 180, 180)
+            path.closeSubpath()
+            painter.drawPath(path)
             
-        # Shape icons inside sub-panel
+            painter.setBrush(QBrush(icon_color if self.active_state else QColor(255, 255, 255, 120)))
+            painter.drawRoundedRect(QRectF(cx - 2, cy - 4, 4, 8), 2, 2)
+            painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+            
+            arrow_up = QPainterPath()
+            arrow_up.moveTo(cx - 9, cy - 2)
+            arrow_up.lineTo(cx - 6, cy - 5)
+            arrow_up.lineTo(cx - 3, cy - 2)
+            painter.drawPath(arrow_up)
+            
+            arrow_down = QPainterPath()
+            arrow_down.moveTo(cx - 9, cy + 2)
+            arrow_down.lineTo(cx - 6, cy + 5)
+            arrow_down.lineTo(cx - 3, cy + 2)
+            painter.drawPath(arrow_down)
+
         elif self.icon_type == VectorIconType.LINE:
             painter.drawLine(int(cx - 8), int(cy + 8), int(cx + 8), int(cy - 8))
             
@@ -220,7 +243,6 @@ class VectorIconButton(QPushButton):
             painter.setBrush(QBrush(icon_color))
             painter.drawPath(arrow)
             
-          # Çizim modundayken ve canvas açıkken ekranın etrafını mavi bir çerçeveyle kapla (etkin mod bildirimi)
         elif self.icon_type == VectorIconType.RECTANGLE:
             painter.drawRect(int(cx - 7), int(cy - 7), 14, 14)
             
@@ -229,17 +251,18 @@ class VectorIconButton(QPushButton):
 
 
 class SubPanel(QWidget):
-    """Süper şık, butonların hemen üstünde beliren Fatih Kalem stili küçük yüzer çekmece"""
+    """Süper şık, butonların yanında beliren Fatih Kalem stili küçük yüzer çekmece"""
     def __init__(self, parent=None):
-        super().__init__(None) # Parent'ı None yapıyoruz ki bağımsız float edebilsin
+        super().__init__(None)
+        # Canvas'ın (X11Bypass) üstünde kalması için aynı pencere bayrağını kullanıyoruz
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.X11BypassWindowManagerHint |
+            Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         
-        # İç çerçeve tasarımı (Glassmorphic)
         self.frame = QFrame(self)
         self.frame.setStyleSheet("""
             QFrame {
@@ -249,12 +272,10 @@ class SubPanel(QWidget):
             }
         """)
         
-        # Layout container
         self.base_layout = QVBoxLayout(self)
         self.base_layout.setContentsMargins(0, 0, 0, 0)
         self.base_layout.addWidget(self.frame)
         
-        # Gölge Efekti
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(0, 0, 0, 180))
@@ -262,25 +283,25 @@ class SubPanel(QWidget):
         self.setGraphicsEffect(shadow)
         
     def show_near(self, button: QWidget):
-        """Panelin konumunu butonun tam üstünde ortalayarak gösterir"""
+        """Panelin konumunu butonun yan tarafında (ekranın konumuna göre soluna veya sağına) hizalayarak gösterir"""
         self.adjustSize()
         btn_pos = button.mapToGlobal(QPoint(0, 0))
         
-        # Paneli butonun tam ortasına hizala ve 10px yukarısında konumlandır
-        x = btn_pos.x() + (button.width() - self.width()) // 2
-        y = btn_pos.y() - self.height() - 10
-        
-        # Ekran sınırlarını aşmasını önle
         screen = QApplication.primaryScreen()
+        x = btn_pos.x() - self.width() - 10
+        y = btn_pos.y() + (button.height() - self.height()) // 2
+        
         if screen:
             screen_rect = screen.geometry()
-            if x < 10:
-                x = 10
-            elif x + self.width() > screen_rect.width() - 10:
-                x = screen_rect.width() - self.width() - 10
-                
+            # Eğer buton ekranın sol yarısındaysa paneli sağında göster
+            if btn_pos.x() < screen_rect.width() / 2:
+                x = btn_pos.x() + button.width() + 10
+            
+            # Ekran dikey sınır kontrolü
             if y < 10:
-                y = btn_pos.y() + button.height() + 10 # Ekranın üstünden taşarsa butonun altına koy
+                y = 10
+            elif y + self.height() > screen_rect.height() - 10:
+                y = screen_rect.height() - self.height() - 10
                 
         self.move(x, y)
         self.show()
@@ -337,16 +358,13 @@ class SizePreview(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Arka plan hafif kesikli kılavuz dairesi
         painter.setPen(QPen(QColor(255, 255, 255, 40), 1, Qt.PenStyle.DashLine))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
         painter.drawEllipse(2, 2, self.width() - 4, self.height() - 4)
         
-        # Önizleme dairesi
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(self.color))
         
-        # Dairenin yarıçapı kalem boyutuna göre (maksimum 36px)
         r = max(2, min(36, self.size))
         cx, cy = self.width() / 2, self.height() / 2
         painter.drawEllipse(QPointF(cx, cy), r / 2, r / 2)
@@ -362,10 +380,8 @@ class SizePanel(SubPanel):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
         
-        # Canlı önizleme
         self.preview = SizePreview(initial_size, initial_color, self)
         
-        # Sürgü (Slider)
         self.slider = QSlider(Qt.Orientation.Horizontal, self)
         self.slider.setRange(1, 50)
         self.slider.setValue(initial_size)
@@ -391,7 +407,6 @@ class SizePanel(SubPanel):
             }
         """)
         
-        # Değer metni
         self.lbl_val = QLabel(f"{initial_size}px", self)
         self.lbl_val.setFont(QFont("Inter", 9, QFont.Weight.Bold))
         self.lbl_val.setStyleSheet("color: #FFFFFF; min-width: 32px;")
@@ -425,7 +440,6 @@ class ColorDot(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Kenarlık ve Dolgu
         painter.setPen(QPen(QColor(255, 255, 255, 120), 1))
         painter.setBrush(QBrush(self.color))
         painter.drawEllipse(1, 1, self.width() - 2, self.height() - 2)
@@ -437,57 +451,291 @@ class ColorDot(QPushButton):
 
 
 class ColorPanel(SubPanel):
-    """Fatih Kalem stili hızlı renk ve tam palet paneli"""
+    """Özel renk paleti — X11Bypass pencereler altında tıklanabilir renkler sunar"""
     color_selected = pyqtSignal(QColor)
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QHBoxLayout(self.frame)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        from PyQt6.QtWidgets import QGridLayout
         
-        # Hızlı renkler: Siyah (İlk Sırada), Kırmızı, Mavi, Yeşil
-        self.dots = []
-        quick_colors = [
-            (QColor(0, 0, 0), "Siyah (Çift Tıkla Özelleştir)"),
-            (QColor(255, 80, 80), "Kırmızı (Çift Tıkla Özelleştir)"),
-            (QColor(80, 150, 255), "Mavi (Çift Tıkla Özelleştir)"),
-            (QColor(80, 255, 150), "Yeşil (Çift Tıkla Özelleştir)")
+        grid = QGridLayout(self.frame)
+        grid.setContentsMargins(8, 8, 8, 8)
+        grid.setSpacing(4)
+        
+        # 16 hazır renk paleti (4x4 ızgara)
+        palette = [
+            # Satır 1: Temel renkler
+            QColor(0, 0, 0),         # Siyah
+            QColor(255, 255, 255),    # Beyaz
+            QColor(220, 50, 50),      # Kırmızı
+            QColor(50, 120, 255),     # Mavi
+            # Satır 2: Doğa tonları
+            QColor(40, 200, 80),      # Yeşil
+            QColor(255, 200, 0),      # Sarı
+            QColor(255, 130, 0),      # Turuncu
+            QColor(160, 50, 220),     # Mor
+            # Satır 3: Pastel tonlar
+            QColor(255, 150, 180),    # Pembe
+            QColor(0, 220, 200),      # Turkuaz
+            QColor(100, 80, 60),      # Kahve
+            QColor(128, 128, 128),    # Gri
+            # Satır 4: Neon / canlı tonlar
+            QColor(0, 255, 100),      # Neon yeşil
+            QColor(255, 50, 150),     # Magenta
+            QColor(0, 180, 255),      # Gök mavi
+            QColor(255, 255, 100),    # Limon
         ]
         
-        for col, tip in quick_colors:
-            dot = ColorDot(col, tip, self)
-            dot.clicked.connect(lambda checked, c=col: self.select_color(c))
-            dot.color_double_clicked.connect(self.open_color_dialog)
-            layout.addWidget(dot)
+        self.dots = []
+        for i, color in enumerate(palette):
+            dot = ColorDot(color, color.name(), self)
+            dot.setFixedSize(26, 26)
+            dot.clicked.connect(lambda checked, c=color: self.select_color(c))
+            grid.addWidget(dot, i // 4, i % 4)
             self.dots.append(dot)
-            
-        # Özel Renk Butonu (Sihirli Gradyan Dairesi)
-        self.btn_custom = QPushButton(self)
-        self.btn_custom.setFixedSize(22, 22)
-        self.btn_custom.setToolTip("Özel Renk Seç (QColorDialog)...")
-        self.btn_custom.setStyleSheet("""
-            QPushButton {
-                background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 red, stop:0.5 green, stop:1 blue);
-                border: 1px solid rgba(255, 255, 255, 0.4);
-                border-radius: 11px;
-            }
-            QPushButton:hover {
-                border: 1px solid #00FFCC;
-            }
-        """)
-        self.btn_custom.clicked.connect(lambda: self.open_color_dialog())
-        layout.addWidget(self.btn_custom)
         
     def select_color(self, color: QColor):
         self.color_selected.emit(color)
         self.hide()
+
+
+class EraserPanel(SubPanel):
+    """Silgi alt paneli. Vektörel silgi modunu seçer ve
+    Tümü Sil, Geri Al, İleri Al işlemlerini barındırır.
+    """
+    undo_clicked = pyqtSignal()
+    redo_clicked = pyqtSignal()
+    clear_clicked = pyqtSignal()
+    close_clicked = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self.frame)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
         
-    def open_color_dialog(self, initial_color=None):
-        init_col = initial_color if initial_color else QColor(0, 255, 204)
-        color = QColorDialog.getColor(init_col, None, "Pardus Kalem - Renk Paleti")
-        if color.isValid():
-            self.select_color(color)
+        self.btn_undo = VectorIconButton(VectorIconType.UNDO, "Geri Al (Ctrl+Z)", self)
+        self.btn_redo = VectorIconButton(VectorIconType.REDO, "İleri Al (Ctrl+Y)", self)
+        self.btn_clear = VectorIconButton(VectorIconType.CLEAR, "Tümünü Sil", self)
+        self.btn_close = VectorIconButton(VectorIconType.CLOSE, "Uygulamadan Çık", self)
+        
+        self.btn_undo.clicked.connect(self.undo_clicked.emit)
+        self.btn_redo.clicked.connect(self.redo_clicked.emit)
+        self.btn_clear.clicked.connect(self.clear_clicked.emit)
+        self.btn_close.clicked.connect(self.close_clicked.emit)
+        
+        layout.addWidget(self.btn_undo)
+        layout.addWidget(self.btn_redo)
+        layout.addWidget(self.btn_clear)
+        layout.addWidget(self.btn_close)
+
+
+class ScrollbarWidget(QWidget):
+    valueChanged = pyqtSignal(float) # Emits value between -1.0 and 1.0
+    released = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(32)
+        self.value = 0.0 # -1.0 (top) to 1.0 (bottom)
+        self.is_dragging = False
+        self.is_hovered = False
+        self.drag_start_y = 0
+        self.drag_start_value = 0.0
+        self.is_simulating = False
+        self.last_warp_time = 0.0
+        self.setMouseTracking(True)
+        
+    def enterEvent(self, event):
+        self.is_hovered = True
+        self.update()
+        
+    def leaveEvent(self, event):
+        self.is_hovered = False
+        self.update()
+        
+    def mousePressEvent(self, event):
+        if self.is_simulating:
+            event.ignore()
+            return
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = True
+            self.drag_start_y = event.position().y()
+            self.drag_start_value = self.value
+            
+            h = self.height()
+            thumb_h = 40
+            travel = h - thumb_h
+            if travel > 0:
+                click_y = event.position().y()
+                target_val = (click_y - h/2) / (travel / 2)
+                self.value = max(-1.0, min(1.0, target_val))
+                self.drag_start_value = self.value
+                self.drag_start_y = click_y
+                self.valueChanged.emit(self.value)
+                self.update()
+            event.accept()
+            
+    def mouseMoveEvent(self, event):
+        if self.is_simulating:
+            event.ignore()
+            return
+        if self.is_dragging:
+            h = self.height()
+            thumb_h = 40
+            travel = h - thumb_h
+            if travel > 0:
+                dy = event.position().y() - self.drag_start_y
+                delta_val = dy / (travel / 2)
+                self.value = max(-1.0, min(1.0, self.drag_start_value + delta_val))
+                self.valueChanged.emit(self.value)
+                self.update()
+            event.accept()
+        else:
+            self.update()
+            
+    def mouseReleaseEvent(self, event):
+        if self.is_simulating:
+            event.ignore()
+            return
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = False
+            self.released.emit()
+            event.accept()
+            
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        w = self.width()
+        h = self.height()
+        cx = w / 2
+        
+        # 1. Draw track line (thin capsule)
+        track_w = 6
+        track_h = h - 20
+        track_color = QColor(255, 255, 255, 30)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(track_color))
+        painter.drawRoundedRect(QRectF(cx - track_w/2, 10, track_w, track_h), track_w/2, track_w/2)
+        
+        # 2. Draw thumb
+        thumb_w = 16
+        thumb_h = 40
+        travel = h - thumb_h
+        thumb_center_y = h/2 + self.value * (travel / 2)
+        thumb_rect = QRectF(cx - thumb_w/2, thumb_center_y - thumb_h/2, thumb_w, thumb_h)
+        
+        if self.is_dragging:
+            thumb_color = QColor(0, 255, 204) # Glow turquoise
+        elif self.is_hovered:
+            thumb_color = QColor(0, 255, 204, 200)
+        else:
+            thumb_color = QColor(255, 255, 255, 180)
+            
+        painter.setBrush(QBrush(thumb_color))
+        painter.drawRoundedRect(thumb_rect, thumb_w/2, thumb_w/2)
+        
+        painter.setPen(QPen(QColor(26, 26, 36), 2))
+        painter.drawLine(int(cx - 4), int(thumb_center_y), int(cx + 4), int(thumb_center_y))
+
+
+class HoverScrollButton(QPushButton):
+    """Üzerine gelindiğinde (hover) veya tıklandığında kaydırma tetikleyen buton"""
+    hovered = pyqtSignal(bool)
+    
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self.setMouseTracking(True)
+        
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.hovered.emit(True)
+        
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.hovered.emit(False)
+
+
+class ScrollbarPanel(SubPanel):
+    """Büyük kaydırma çubuğu paneli. Sürüklemeye duyarlı kaydırma simülasyonu sunar."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.frame.setStyleSheet("""
+            QFrame {
+                background-color: rgba(20, 20, 28, 0.95);
+                border: 1px solid rgba(0, 255, 204, 0.4);
+                border-radius: 16px;
+            }
+        """)
+        
+        layout = QVBoxLayout(self.frame)
+        layout.setContentsMargins(8, 12, 8, 12)
+        layout.setSpacing(6)
+        
+        # Büyük kaydırma çubuğu widget'ı
+        self.scrollbar = ScrollbarWidget(self)
+        self.scrollbar.setFixedHeight(200)
+        layout.addWidget(self.scrollbar)
+        
+        # pynput mouse controller
+        from pynput.mouse import Controller as MouseController
+        self.mouse_controller = MouseController()
+        
+        self.scroll_timer = QTimer(self)
+        self.scroll_timer.setInterval(50) # 50ms tetikleme
+        self.scroll_timer.timeout.connect(self.perform_scroll)
+        
+        self.scrollbar.valueChanged.connect(self.on_value_changed)
+        self.scrollbar.released.connect(self.on_released)
+        
+    def on_value_changed(self, value):
+        if value != 0.0:
+            if not self.scroll_timer.isActive():
+                self.scroll_timer.start()
+        else:
+            self.scroll_timer.stop()
+            
+    def on_released(self):
+        # Kaydırma çubuğu bırakıldığında değeri yavaşça sıfırla ve durdur
+        self.scrollbar.value = 0.0
+        self.scrollbar.update()
+        self.scroll_timer.stop()
+        
+    def perform_scroll(self):
+        val = self.scrollbar.value
+        # Stop timer if value is negligible
+        if abs(val) < 0.05:
+            self.scroll_timer.stop()
+            return
+        
+        # Dynamic scroll step (1‑4 clicks depending on distance from centre)
+        dy = max(1, int(abs(val) * 4))
+        button = 4 if val < 0 else 5  # 4 = wheel up, 5 = wheel down
+        
+        self.scrollbar.is_simulating = True
+        try:
+            import subprocess
+            # 1. Capture current cursor position (where the user is dragging)
+            orig_pos = self.mouse_controller.position
+            # 2. Move cursor away from the panel (e.g., 250px left, staying on screen)
+            target_x = max(10, orig_pos[0] - 250)
+            target_y = orig_pos[1]
+            self.mouse_controller.position = (target_x, target_y)
+            # 3. Send scroll event to the now‑focused window (the document behind)
+            subprocess.run(
+                ["xdotool", "click", "--delay", "5", str(button), str(dy)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            # 4. Restore cursor back to the user's finger position
+            self.mouse_controller.position = orig_pos
+            # Keep UI responsive
+            QApplication.processEvents()
+        except Exception as e:
+            print(f"Scroll tetikleme hatası: {e}")
+        finally:
+            self.scrollbar.is_simulating = False
 
 
 class FloatingToolbar(QWidget):
@@ -506,11 +754,12 @@ class FloatingToolbar(QWidget):
         self._drag_pos = QPoint()
         self.is_collapsed = True # Varsayılan olarak kapalı/fare modunda başlar
 
-        # Pencere Özellikleri: Çerçevesiz, Her Zaman Üstte, Panel/Araç Penceresi
+        # Pencere Özellikleri: Çerçevesiz, Her Zaman Üstte, Pencere Yöneticisini Baypas Et (Tıklanabilirlik için)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.X11BypassWindowManagerHint |
+            Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
@@ -525,17 +774,25 @@ class FloatingToolbar(QWidget):
         self.shape_panel = ShapePanel(self)
         self.size_panel = SizePanel(self.engine.get_pen_width(), self.engine.get_color(), self)
         self.color_panel = ColorPanel(self)
+        self.eraser_panel = EraserPanel(self)
+        self.scrollbar_panel = ScrollbarPanel(self)
 
         # Sub-Panel Sinyal Bağlantıları
         self.shape_panel.shape_selected.connect(self.select_shape_mode)
         self.size_panel.size_changed.connect(self.select_thickness)
         self.color_panel.color_selected.connect(self.select_color)
+        
+        self.eraser_panel.undo_clicked.connect(self.undo_requested.emit)
+        self.eraser_panel.redo_clicked.connect(self.redo_requested.emit)
+        self.eraser_panel.clear_clicked.connect(self.clear_requested.emit)
+        self.eraser_panel.close_clicked.connect(self.close_requested.emit)
 
         # Arayüz Kurulumu
         self.init_ui()
+        self.btn_color.icon_color_override = self.engine.get_color()
 
     def init_ui(self):
-        self.main_layout = QHBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
@@ -544,8 +801,8 @@ class FloatingToolbar(QWidget):
         self.panel.setObjectName("glassPanel")
         self.main_layout.addWidget(self.panel)
 
-        # Yatay Düzen (Fatih Kalem Şeridi)
-        self.panel_layout = QHBoxLayout(self.panel)
+        # Tamamen dikey yerleşim kullanıyoruz
+        self.panel_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom, self.panel)
         self.panel_layout.setContentsMargins(6, 6, 6, 6)
         self.panel_layout.setSpacing(4)
 
@@ -556,82 +813,121 @@ class FloatingToolbar(QWidget):
         self.set_collapsed_state(True)
 
     def create_components(self):
-        # 1. Grab Handle (Sürükleme Çubuğu - Yatay Düzen Solu)
+        # 1. Grab Handle (Sürükleme Çubuğu - Dikey Düzen Üstü)
         self.grab_handle = QFrame(self.panel)
-        self.grab_handle.setFixedWidth(16)
-        self.grab_handle.setFixedHeight(38)
+        self.grab_handle.setFixedWidth(40)
+        self.grab_handle.setFixedHeight(35)
         self.grab_handle.setCursor(Qt.CursorShape.OpenHandCursor)
         self.grab_handle.setStyleSheet("""
             QFrame {
                 background: rgba(255, 255, 255, 0.05);
-                border-radius: 4px;
+                border-radius: 6px;
             }
         """)
         handle_layout = QVBoxLayout(self.grab_handle)
-        handle_layout.setContentsMargins(0, 0, 0, 0)
-        handle_layout.setSpacing(2)
-        dots = QLabel("⋮\n⋮", self.grab_handle)
-        dots.setFont(QFont("Inter", 8, QFont.Weight.Bold))
-        dots.setStyleSheet("color: rgba(0, 255, 204, 0.8);")
-        dots.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        handle_layout.addWidget(dots)
+        handle_layout.setContentsMargins(2, 2, 2, 2)
+        handle_layout.setSpacing(1)
+        
+        lbl_pardus = QLabel("Pardus", self.grab_handle)
+        lbl_pardus.setFont(QFont("Outfit", 8, QFont.Weight.Bold))
+        lbl_pardus.setStyleSheet("color: #00FFCC; background: transparent;")
+        lbl_pardus.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_pardus.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        
+        lbl_kalem = QLabel("Kalem", self.grab_handle)
+        lbl_kalem.setFont(QFont("Outfit", 8, QFont.Weight.Bold))
+        lbl_kalem.setStyleSheet("color: rgba(255, 255, 255, 0.7); background: transparent;")
+        lbl_kalem.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_kalem.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        
+        handle_layout.addWidget(lbl_pardus)
+        handle_layout.addWidget(lbl_kalem)
 
-        # 2. Bubble Butonu (Yalnızca kapalı/küçültülmüş durumda çalışır)
-        self.btn_bubble = VectorIconButton(VectorIconType.PEN, "Pardus Kalem: Çizim Modunu Aç", self.panel)
+        # Collapsed durumdayken görünecek "Pardus Kalem" yazısı
+        self.lbl_collapsed_brand = QWidget(self.panel)
+        self.lbl_collapsed_brand.setStyleSheet("background: transparent;")
+        brand_layout = QVBoxLayout(self.lbl_collapsed_brand)
+        brand_layout.setContentsMargins(0, 0, 0, 0)
+        brand_layout.setSpacing(1)
+        
+        lbl_c_pardus = QLabel("Pardus", self.lbl_collapsed_brand)
+        lbl_c_pardus.setFont(QFont("Outfit", 7, QFont.Weight.Bold))
+        lbl_c_pardus.setStyleSheet("color: #00FFCC; background: transparent;")
+        lbl_c_pardus.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_c_pardus.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        
+        lbl_c_kalem = QLabel("Kalem", self.lbl_collapsed_brand)
+        lbl_c_kalem.setFont(QFont("Outfit", 7, QFont.Weight.Bold))
+        lbl_c_kalem.setStyleSheet("color: rgba(255, 255, 255, 0.7); background: transparent;")
+        lbl_c_kalem.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_c_kalem.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        
+        brand_layout.addWidget(lbl_c_pardus)
+        brand_layout.addWidget(lbl_c_kalem)
+
+        # 2. Bubble Butonu (Yalnızca kapalı/küçültülmüş durumda çalışır - Çizimi açar)
+        self.btn_bubble = VectorIconButton(VectorIconType.PEN, "Çizim Modunu Aç", self.panel)
         self.btn_bubble.setFixedSize(40, 40)
         self.btn_bubble.clicked.connect(self.expand_toolbar)
 
-        # 3. İşaretçi / Fare Seçim Modu
-        self.btn_pointer = VectorIconButton(VectorIconType.MOUSE, "İşaretçi Modu (Masaüstü Etkileşimi)", self.panel)
+        # 3. Kaydırma Çubuğu Yardımcısı Butonu (Yalnızca kapalı/küçültülmüş durumda çalışır)
+        self.btn_scroll_toggle = VectorIconButton(VectorIconType.SCROLL, "Kaydırma Yardımcısı", self.panel)
+        self.btn_scroll_toggle.setFixedSize(40, 40)
+        self.btn_scroll_toggle.clicked.connect(self.toggle_scrollbar_panel)
+
+        # 4. İşaretçi / Fare Seçim Modu (Yedek)
+        self.btn_pointer = VectorIconButton(VectorIconType.MOUSE, "İşaretçi Modu", self.panel)
         self.btn_pointer.clicked.connect(self.collapse_toolbar)
 
-        # 4. Kalem Butonu
+        # 5. Kalem Butonu
         self.btn_pen = VectorIconButton(VectorIconType.PEN, "Çizim Kalemi", self.panel)
-        self.btn_pen.clicked.connect(lambda: self.select_mode(ToolMode.PEN))
+        self.btn_pen.clicked.connect(self.on_pen_clicked)
 
-        # 5. Fosforlu Kalem Butonu
+        # 6. Fosforlu Kalem Butonu (Yedek)
         self.btn_highlighter = VectorIconButton(VectorIconType.HIGHLIGHTER, "Fosforlu Kalem", self.panel)
         self.btn_highlighter.clicked.connect(lambda: self.select_mode(ToolMode.HIGHLIGHTER))
 
-        # 6. Silgi Butonu
+        # 7. Silgi Butonu
         self.btn_eraser = VectorIconButton(VectorIconType.ERASER, "Vektörel Silgi", self.panel)
-        self.btn_eraser.clicked.connect(lambda: self.select_mode(ToolMode.ERASER))
+        self.btn_eraser.clicked.connect(self.on_eraser_clicked)
 
-        # 7. Şekiller Butonu
+        # 8. Şekiller Butonu
         self.btn_shape = VectorIconButton(VectorIconType.SHAPE, "Geometrik Şekiller", self.panel)
         self.btn_shape.clicked.connect(self.show_shape_panel)
 
-        # 8. Renk Butonu
-        self.btn_color = VectorIconButton(VectorIconType.PALETTE, "Renk Seçimi (Çift Tıkla Palet)", self.panel)
+        # 9. Renk Butonu (Yedek)
+        self.btn_color = VectorIconButton(VectorIconType.PALETTE, "Renk Seçimi", self.panel)
         self.btn_color.clicked.connect(self.show_color_panel)
 
-        # 9. Kalınlık Butonu
+        # 10. Kalınlık Butonu
         self.btn_size = VectorIconButton(VectorIconType.SIZE, "Çizim Kalınlığı Ayarı", self.panel)
         self.btn_size.clicked.connect(self.show_size_panel)
 
-        # Bölücü Çizgi
+        # Bölücü Çizgi (Yedek)
         self.separator = QFrame(self.panel)
         self.separator.setFrameShape(QFrame.Shape.VLine)
         self.separator.setStyleSheet("background-color: rgba(255, 255, 255, 0.12); max-width: 1px; min-height: 25px;")
 
-        # 10. Geri Al
-        self.btn_undo = VectorIconButton(VectorIconType.UNDO, "Geri Al (Ctrl+Z)", self.panel)
+        # 11. Geri Al (Yedek)
+        self.btn_undo = VectorIconButton(VectorIconType.UNDO, "Geri Al", self.panel)
         self.btn_undo.clicked.connect(self.undo_requested.emit)
 
-        # 11. İleri Al
-        self.btn_redo = VectorIconButton(VectorIconType.REDO, "İleri Al (Ctrl+Y)", self.panel)
+        # 12. İleri Al (Yedek)
+        self.btn_redo = VectorIconButton(VectorIconType.REDO, "İleri Al", self.panel)
         self.btn_redo.clicked.connect(self.redo_requested.emit)
 
-        # 12. Temizle
+        # 13. Temizle (Yedek)
         self.btn_clear = VectorIconButton(VectorIconType.CLEAR, "Ekranı Temizle", self.panel)
         self.btn_clear.clicked.connect(self.clear_requested.emit)
 
-        # 13. Kapat
-        self.btn_close = VectorIconButton(VectorIconType.CLOSE, "Uygulamadan Çık", self.panel)
+        # 14. Kapat (Yedek)
+        self.btn_close = VectorIconButton(VectorIconType.CLOSE, "Kapat", self.panel)
         self.btn_close.clicked.connect(self.close_requested.emit)
 
-        # Panel Layout'a ekle (Sıralı yatay düzen)
+        # Panel Layout'a ekle (Sıralı ekleme, visibility kontrolü ile gösterilecekler belirlenecek)
+        self.panel_layout.addWidget(self.lbl_collapsed_brand)
         self.panel_layout.addWidget(self.btn_bubble)
+        self.panel_layout.addWidget(self.btn_scroll_toggle)
         self.panel_layout.addWidget(self.grab_handle)
         self.panel_layout.addWidget(self.btn_pointer)
         self.panel_layout.addWidget(self.btn_pen)
@@ -653,18 +949,34 @@ class FloatingToolbar(QWidget):
         self.shape_panel.hide()
         self.size_panel.hide()
         self.color_panel.hide()
+        self.eraser_panel.hide()
+        self.scrollbar_panel.hide()
+        self.btn_scroll_toggle.set_checked(False)
 
+        # Görünürlük grupları
+        collapsed_widgets = [self.btn_bubble, self.btn_scroll_toggle]
         expanded_widgets = [
-            self.grab_handle, self.btn_pointer, self.btn_pen, self.btn_highlighter,
-            self.btn_eraser, self.btn_shape, self.btn_color, self.btn_size,
-            self.separator, self.btn_undo, self.btn_redo, self.btn_clear, self.btn_close
+            self.grab_handle, self.btn_pen, self.btn_eraser, self.btn_color, self.btn_size, self.btn_shape
+        ]
+        extra_widgets = [
+            self.btn_pointer, self.btn_highlighter, self.separator,
+            self.btn_undo, self.btn_redo, self.btn_clear, self.btn_close
         ]
 
+        # Extra butonları tamamen gizli tut (Fatih Kalem stili sade arayüz için)
+        for w in extra_widgets:
+            w.hide()
+
         if collapsed:
-            # Sadece bubble butonu görünsün
+            # Dikey yerleşim
+            self.panel_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            
             for w in expanded_widgets:
                 w.hide()
-            self.btn_bubble.show()
+            for w in collapsed_widgets:
+                w.show()
+            self.lbl_collapsed_brand.show()
+                
             self.panel.setStyleSheet("""
                 QFrame#glassPanel {
                     background-color: rgba(26, 26, 36, 0.95);
@@ -672,13 +984,19 @@ class FloatingToolbar(QWidget):
                     border-radius: 20px;
                 }
             """)
-            self.panel_layout.setContentsMargins(4, 4, 4, 4)
-            self.setFixedSize(48, 48)
+            self.panel_layout.setContentsMargins(4, 8, 4, 8)
+            self.panel_layout.setSpacing(4)
+            self.setFixedSize(48, 126) # "Pardus Kalem" etiketi (30px) + İki adet 40x40 buton (80px) + boşluklar
         else:
-            # Tüm araç kutusu şeridi görünsün
-            self.btn_bubble.hide()
+            # Genişletilmiş durumda da dikey yerleşim
+            self.panel_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            
+            self.lbl_collapsed_brand.hide()
+            for w in collapsed_widgets:
+                w.hide()
             for w in expanded_widgets:
                 w.show()
+                
             self.panel.setStyleSheet("""
                 QFrame#glassPanel {
                     background-color: rgba(26, 26, 36, 0.85);
@@ -686,9 +1004,10 @@ class FloatingToolbar(QWidget):
                     border-radius: 12px;
                 }
             """)
-            self.panel_layout.setContentsMargins(6, 6, 6, 6)
+            self.panel_layout.setContentsMargins(4, 4, 4, 4)
+            self.panel_layout.setSpacing(4)
             
-            # Boyut kısıtlarını kaldır, otomatik hesaplansın
+            # Boyut kısıtlarını kaldır ve otomatik sığdır
             self.setMinimumSize(0, 0)
             self.setMaximumSize(16777215, 16777215)
             self.adjustSize()
@@ -697,13 +1016,23 @@ class FloatingToolbar(QWidget):
     def expand_toolbar(self):
         """Çizim moduna geçer ve araç çubuğunu genişletir"""
         self.set_collapsed_state(False)
-        # Varsayılan araç: Kalem
         self.select_mode(ToolMode.PEN)
 
     def collapse_toolbar(self):
         """Fare moduna geçer ve araç çubuğunu kapatır"""
         self.set_collapsed_state(True)
         self.mode_changed.emit(ToolMode.MOUSE)
+
+    def on_pen_clicked(self):
+        # Kalem seçiliyken tekrar basılırsa çizim modunu kapatıp dikey menüye döner
+        if self.engine.get_active_tool() == ToolMode.PEN:
+            self.collapse_toolbar()
+        else:
+            self.select_mode(ToolMode.PEN)
+
+    def on_eraser_clicked(self):
+        self.select_mode(ToolMode.ERASER)
+        self.show_eraser_panel()
 
     def select_mode(self, mode: ToolMode):
         if mode == ToolMode.MOUSE:
@@ -712,12 +1041,11 @@ class FloatingToolbar(QWidget):
 
         self.engine.set_active_tool(mode)
 
-        # Buton durumlarını güncelle (aktif rengi vermek için)
+        # Buton durumlarını güncelle
         self.btn_pen.set_checked(mode == ToolMode.PEN)
-        self.btn_highlighter.set_checked(mode == ToolMode.HIGHLIGHTER)
         self.btn_eraser.set_checked(mode == ToolMode.ERASER)
 
-        # Şekillerden biri seçildiyse Shape butonunu aktif yap
+        # Şekillerden biri aktifse Şekil butonunu işaretle
         is_shape = mode in [ToolMode.LINE, ToolMode.ARROW, ToolMode.RECTANGLE, ToolMode.CIRCLE]
         self.btn_shape.set_checked(is_shape)
 
@@ -728,20 +1056,35 @@ class FloatingToolbar(QWidget):
 
     def select_thickness(self, width: int):
         self.engine.set_pen_width(width)
-        # Vurgulayıcı kalınlığı kalemin 4 katı
         self.engine.set_highlighter_width(width * 4)
 
     def select_color(self, color: QColor):
         self.engine.set_color(color)
         self.size_panel.set_color(color)
+        self.btn_color.icon_color_override = color
+        self.btn_color.update()
 
-    # Sub-Panel Açma Kontrolleri
+    # Sub-Panel Kontrolleri
+    def toggle_scrollbar_panel(self):
+        if self.scrollbar_panel.isVisible():
+            self.scrollbar_panel.hide()
+            self.btn_scroll_toggle.set_checked(False)
+        else:
+            self.shape_panel.hide()
+            self.size_panel.hide()
+            self.color_panel.hide()
+            self.eraser_panel.hide()
+            self.scrollbar_panel.show_near(self.btn_scroll_toggle)
+            self.btn_scroll_toggle.set_checked(True)
+
     def show_shape_panel(self):
         if self.shape_panel.isVisible():
             self.shape_panel.hide()
         else:
             self.size_panel.hide()
             self.color_panel.hide()
+            self.eraser_panel.hide()
+            self.scrollbar_panel.hide()
             self.shape_panel.show_near(self.btn_shape)
 
     def show_size_panel(self):
@@ -750,6 +1093,8 @@ class FloatingToolbar(QWidget):
         else:
             self.shape_panel.hide()
             self.color_panel.hide()
+            self.eraser_panel.hide()
+            self.scrollbar_panel.hide()
             self.size_panel.show_near(self.btn_size)
 
     def show_color_panel(self):
@@ -758,13 +1103,34 @@ class FloatingToolbar(QWidget):
         else:
             self.shape_panel.hide()
             self.size_panel.hide()
+            self.eraser_panel.hide()
+            self.scrollbar_panel.hide()
             self.color_panel.show_near(self.btn_color)
 
-    # MOUSE SÜRÜKLEME (Dragging) DESTEĞİ
+    def show_eraser_panel(self):
+        if self.eraser_panel.isVisible():
+            self.eraser_panel.hide()
+        else:
+            self.shape_panel.hide()
+            self.size_panel.hide()
+            self.color_panel.hide()
+            self.scrollbar_panel.hide()
+            self.eraser_panel.show_near(self.btn_eraser)
+
+    # Sürükleme desteği
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self.grab_handle.setCursor(Qt.CursorShape.ClosedHandCursor)
+            
+            # Sürükleme başladığında açık panelleri gizle
+            self.shape_panel.hide()
+            self.size_panel.hide()
+            self.color_panel.hide()
+            self.eraser_panel.hide()
+            self.scrollbar_panel.hide()
+            self.btn_scroll_toggle.set_checked(False)
+            
             event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent):
